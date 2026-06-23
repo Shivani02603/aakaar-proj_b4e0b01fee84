@@ -1,37 +1,26 @@
-import logging
-from typing import List, Dict, Optional
-from fastapi import HTTPException, status
+from uuid import UUID
+from typing import List, Dict
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
 from database.models import DocumentChunk
+from datetime import datetime
 from ai.embeddings import get_embedding
 
-logger = logging.getLogger(__name__)
 
 class QueryEmbeddingService:
-    @staticmethod
-    async def embed_query(query: str, session_id: str, db: AsyncSession) -> List[float]:
+    async def embed_query(self, query: str, session_id: UUID, db: AsyncSession) -> Dict:
         """
-        Embed a user query into a vector representation.
+        Embed a user query and return the embedding vector.
         """
         try:
-            embedding = get_embedding([query])
-            if not embedding or len(embedding) == 0:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to generate embedding for the query."
-                )
-            return embedding[0]
+            embedding = get_embedding([query])[0]  # Assuming get_embedding returns a list of embeddings
+            return {"query": query, "embedding": embedding}
         except Exception as e:
-            logger.error(f"Error embedding query: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while embedding the query."
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to embed query: {str(e)}")
 
-    @staticmethod
-    async def create_document_chunk(chunk_data: Dict, db: AsyncSession) -> DocumentChunk:
+    async def create_document_chunk(self, chunk_data: Dict, db: AsyncSession) -> DocumentChunk:
         """
         Create a new document chunk in the database.
         """
@@ -42,15 +31,10 @@ class QueryEmbeddingService:
             await db.refresh(new_chunk)
             return new_chunk
         except SQLAlchemyError as e:
-            logger.error(f"Error creating document chunk: {str(e)}")
             await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while creating the document chunk."
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to create document chunk: {str(e)}")
 
-    @staticmethod
-    async def get_document_chunk_by_id(chunk_id: str, db: AsyncSession) -> DocumentChunk:
+    async def get_document_chunk_by_id(self, chunk_id: UUID, db: AsyncSession) -> DocumentChunk:
         """
         Retrieve a document chunk by its ID.
         """
@@ -58,20 +42,12 @@ class QueryEmbeddingService:
             result = await db.execute(select(DocumentChunk).where(DocumentChunk.id == chunk_id))
             chunk = result.scalar_one_or_none()
             if not chunk:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Document chunk with ID {chunk_id} not found."
-                )
+                raise HTTPException(status_code=404, detail="Document chunk not found")
             return chunk
         except SQLAlchemyError as e:
-            logger.error(f"Error retrieving document chunk by ID: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while retrieving the document chunk."
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve document chunk: {str(e)}")
 
-    @staticmethod
-    async def list_all_document_chunks(db: AsyncSession) -> List[DocumentChunk]:
+    async def list_all_document_chunks(self, db: AsyncSession) -> List[DocumentChunk]:
         """
         List all document chunks in the database.
         """
@@ -80,41 +56,31 @@ class QueryEmbeddingService:
             chunks = result.scalars().all()
             return chunks
         except SQLAlchemyError as e:
-            logger.error(f"Error listing all document chunks: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while listing document chunks."
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to list document chunks: {str(e)}")
 
-    @staticmethod
-    async def update_document_chunk(chunk_id: str, update_data: Dict, db: AsyncSession) -> DocumentChunk:
+    async def update_document_chunk(self, chunk_id: UUID, update_data: Dict, db: AsyncSession) -> DocumentChunk:
         """
-        Update an existing document chunk.
+        Update a document chunk by its ID.
         """
         try:
             result = await db.execute(select(DocumentChunk).where(DocumentChunk.id == chunk_id))
             chunk = result.scalar_one_or_none()
             if not chunk:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Document chunk with ID {chunk_id} not found."
-                )
+                raise HTTPException(status_code=404, detail="Document chunk not found")
+
             for key, value in update_data.items():
                 setattr(chunk, key, value)
+
+            chunk.updated_at = datetime.utcnow()
             db.add(chunk)
             await db.commit()
             await db.refresh(chunk)
             return chunk
         except SQLAlchemyError as e:
-            logger.error(f"Error updating document chunk: {str(e)}")
             await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while updating the document chunk."
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to update document chunk: {str(e)}")
 
-    @staticmethod
-    async def delete_document_chunk(chunk_id: str, db: AsyncSession) -> None:
+    async def delete_document_chunk(self, chunk_id: UUID, db: AsyncSession) -> None:
         """
         Delete a document chunk by its ID.
         """
@@ -122,16 +88,10 @@ class QueryEmbeddingService:
             result = await db.execute(select(DocumentChunk).where(DocumentChunk.id == chunk_id))
             chunk = result.scalar_one_or_none()
             if not chunk:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Document chunk with ID {chunk_id} not found."
-                )
+                raise HTTPException(status_code=404, detail="Document chunk not found")
+
             await db.delete(chunk)
             await db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Error deleting document chunk: {str(e)}")
             await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while deleting the document chunk."
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to delete document chunk: {str(e)}")
