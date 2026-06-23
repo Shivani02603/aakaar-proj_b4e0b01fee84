@@ -1,102 +1,93 @@
-import logging
-from typing import List, Optional
 from uuid import UUID
+from typing import List
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
-from database.models import Citation
+from datetime import datetime
+from database.models import SourceCitation
+from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
 
 class FrontendCitationDisplayService:
-    @staticmethod
-    async def create_citation(citation_data: dict, db: AsyncSession) -> Citation:
+    async def create_citation(self, citation_data: dict, db: AsyncSession) -> SourceCitation:
         try:
-            citation = Citation(**citation_data)
-            db.add(citation)
+            new_citation = SourceCitation(**citation_data)
+            db.add(new_citation)
             await db.commit()
-            await db.refresh(citation)
-            return citation
+            await db.refresh(new_citation)
+            return new_citation
         except SQLAlchemyError as e:
-            logger.error(f"Error creating citation: {e}")
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create citation."
+                detail=f"Error creating citation: {str(e)}"
             )
 
-    @staticmethod
-    async def get_citation_by_id(citation_id: UUID, db: AsyncSession) -> Citation:
+    async def get_citation_by_id(self, citation_id: UUID, db: AsyncSession) -> SourceCitation:
         try:
-            result = await db.execute(select(Citation).where(Citation.id == citation_id))
+            result = await db.execute(select(SourceCitation).where(SourceCitation.id == citation_id))
             citation = result.scalar_one_or_none()
             if not citation:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Citation with ID {citation_id} not found."
+                    detail=f"Citation with ID {citation_id} not found"
                 )
             return citation
         except SQLAlchemyError as e:
-            logger.error(f"Error fetching citation by ID {citation_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to fetch citation."
+                detail=f"Error retrieving citation: {str(e)}"
             )
 
-    @staticmethod
-    async def list_all_citations(db: AsyncSession) -> List[Citation]:
+    async def list_all_citations(self, db: AsyncSession) -> List[SourceCitation]:
         try:
-            result = await db.execute(select(Citation))
+            result = await db.execute(select(SourceCitation))
             citations = result.scalars().all()
             return citations
         except SQLAlchemyError as e:
-            logger.error(f"Error listing all citations: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to list citations."
+                detail=f"Error listing citations: {str(e)}"
             )
 
-    @staticmethod
-    async def update_citation(citation_id: UUID, update_data: dict, db: AsyncSession) -> Citation:
+    async def update_citation(self, citation_id: UUID, citation_update: dict, db: AsyncSession) -> SourceCitation:
         try:
-            result = await db.execute(select(Citation).where(Citation.id == citation_id))
+            result = await db.execute(select(SourceCitation).where(SourceCitation.id == citation_id))
             citation = result.scalar_one_or_none()
             if not citation:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Citation with ID {citation_id} not found."
+                    detail=f"Citation with ID {citation_id} not found"
                 )
-            for key, value in update_data.items():
+            for key, value in citation_update.items():
                 setattr(citation, key, value)
+            citation.updated_at = datetime.utcnow()
             db.add(citation)
             await db.commit()
             await db.refresh(citation)
             return citation
         except SQLAlchemyError as e:
-            logger.error(f"Error updating citation with ID {citation_id}: {e}")
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update citation."
+                detail=f"Error updating citation: {str(e)}"
             )
 
-    @staticmethod
-    async def delete_citation(citation_id: UUID, db: AsyncSession) -> None:
+    async def delete_citation(self, citation_id: UUID, db: AsyncSession) -> None:
         try:
-            result = await db.execute(select(Citation).where(Citation.id == citation_id))
+            result = await db.execute(select(SourceCitation).where(SourceCitation.id == citation_id))
             citation = result.scalar_one_or_none()
             if not citation:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Citation with ID {citation_id} not found."
+                    detail=f"Citation with ID {citation_id} not found"
                 )
             await db.delete(citation)
             await db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Error deleting citation with ID {citation_id}: {e}")
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to delete citation."
+                detail=f"Error deleting citation: {str(e)}"
             )
