@@ -10,36 +10,26 @@ Base = declarative_base()
 class VectorStoreModel(Base):
     __tablename__ = "vector_store"
     id = Column(String, primary_key=True)
-    vector = Column(Vector(1536))
-    metadata = Column(JSON)
+    vector = Column(Vector(1536), nullable=False)
+    metadata = Column(JSON, nullable=True)
 
 class VectorStore:
     def __init__(self):
         self._engine = None
         self._Session = None
 
-    def _get_engine(self):
-        if not self._engine:
-            db_url = os.getenv("DATABASE_URL")
-            if not db_url:
-                raise ValueError("DATABASE_URL environment variable is not set.")
-            self._engine = create_engine(db_url)
-        return self._engine
-
-    def _get_session(self):
-        if not self._Session:
-            engine = self._get_engine()
-            self._Session = sessionmaker(bind=engine)
-        return self._Session()
-
-    def initialize(self):
-        engine = self._get_engine()
-        Base.metadata.create_all(engine)
+    def _init_db(self):
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            raise ValueError("DATABASE_URL environment variable is not set.")
+        self._engine = create_engine(db_url)
+        self._Session = sessionmaker(bind=self._engine)
+        Base.metadata.create_all(self._engine)
 
     def upsert(self, id: str, vector: List[float], metadata: Dict[str, Any]):
-        if len(vector) != 1536:
-            raise ValueError(f"Vector dimension mismatch. Expected 1536, got {len(vector)}.")
-        session = self._get_session()
+        if not self._engine or not self._Session:
+            self._init_db()
+        session = self._Session()
         try:
             existing_entry = session.query(VectorStoreModel).filter_by(id=id).first()
             if existing_entry:
@@ -56,15 +46,25 @@ class VectorStore:
             session.close()
 
     def search(self, query_embedding: List[float], top_k: int, **filters) -> List[Dict[str, Any]]:
-        if len(query_embedding) != 1536:
-            raise ValueError(f"Query embedding dimension mismatch. Expected 1536, got {len(query_embedding)}.")
-        session = self._get_session()
+        if not self._engine or not self._Session:
+            self._init_db()
+        session = self._Session()
         try:
-            query = session.query(VectorStoreModel)
+            query = session.query(
+                VectorStoreModel.id,
+                VectorStoreModel.vector,
+                VectorStoreModel.metadata
+            ).order_by(VectorStoreModel.vector.cosine_distance(query_embedding)).limit(top_k)
+
             for key, value in filters.items():
                 query = query.filter(VectorStoreModel.metadata[key] == value)
-            results = query.order_by(VectorStoreModel.vector.cosine_distance(query_embedding)).limit(top_k).all()
-            return [{"id": result.id, "metadata": result.metadata} for result in results]
+
+            results = query.all()
+            matches = [
+                {"id": result.id, "vector": result.vector, "metadata": result.metadata}
+                for result in results
+            ]
+            return matches
         except Exception as e:
             raise e
         finally:
