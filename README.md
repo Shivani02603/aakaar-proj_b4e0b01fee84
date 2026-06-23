@@ -23,6 +23,14 @@ cp .env.example .env
 **All keys are REQUIRED before starting the app.** The `.env.example` lists every variable with descriptions.
 
 
+## Database Setup
+
+Run migrations before starting the backend:
+```bash
+cd backend
+alembic upgrade head
+```
+
 
 ### Backend (FastAPI — port 8000)
 ```bash
@@ -63,10 +71,10 @@ Dockerfile.backend
 Dockerfile.frontend
 Makefile
 ai
+alembic
 backend
 database
 docker-compose.yml
-env.py
 frontend
 requirements.txt
 scripts
