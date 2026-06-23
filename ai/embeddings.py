@@ -11,8 +11,6 @@ class EmbeddingClient:
         self.model = "text-embedding-3-small"
 
     def embed_text(self, text: str) -> List[float]:
-        if not text:
-            raise ValueError("Input text cannot be empty.")
         response = openai.Embedding.create(
             model=self.model,
             input=text
@@ -23,8 +21,6 @@ class EmbeddingClient:
         return embedding
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        if not texts:
-            raise ValueError("Input texts cannot be empty.")
         response = openai.Embedding.create(
             model=self.model,
             input=texts
