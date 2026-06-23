@@ -1,26 +1,25 @@
-# Define variables
+# Variables
 DOCKER_COMPOSE = docker-compose
-BACKEND_DIR = backend
-FRONTEND_DIR = frontend
+PYTHON = python3
+NPM = npm
 
 # Install dependencies
 install:
-	pip install -r $(BACKEND_DIR)/requirements.txt
-	cd $(FRONTEND_DIR) && npm install
+	$(PYTHON) -m pip install -r backend/requirements.txt
+	cd frontend && $(NPM) install
 
 # Start development environment
 dev:
 	./scripts/dev.sh
 
-# Build the project
+# Build production images
 build:
-	docker build -t rag-backend $(BACKEND_DIR)
-	docker build -t rag-frontend $(FRONTEND_DIR)
+	$(DOCKER_COMPOSE) build
 
 # Run tests
 test:
-	pytest $(BACKEND_DIR)/tests
-	cd $(FRONTEND_DIR) && npm test
+	pytest backend/tests
+	cd frontend && $(NPM) test
 
 # Start Docker Compose services
 docker-up:
@@ -32,5 +31,4 @@ docker-down:
 
 # Clean up Docker artifacts
 clean:
-	$(DOCKER_COMPOSE) down --volumes --remove-orphans
-	docker system prune -f
+	$(DOCKER_COMPOSE) down -v --rmi all --remove-orphans
