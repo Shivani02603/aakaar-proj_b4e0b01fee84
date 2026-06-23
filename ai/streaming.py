@@ -3,16 +3,14 @@ from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from ai.embeddings import get_embedding
 from ai.vector_store import vector_store
-from ai.llm import gemini_flash
-from typing import AsyncGenerator
+from ai.llm import gemini_flash_stream
 
 app = FastAPI()
 
-async def stream_answer(query: str, session_id: str, user_id: str) -> AsyncGenerator[str, None]:
-    # Lazily load API keys
+async def stream_answer(query: str, session_id: str, user_id: str):
+    # Read API keys lazily
     openai_api_key = os.getenv("OPENAI_API_KEY")
     gemini_api_key = os.getenv("GEMINI_API_KEY")
-
     if not openai_api_key or not gemini_api_key:
         raise RuntimeError("API keys are not set in environment variables.")
 
@@ -27,7 +25,7 @@ async def stream_answer(query: str, session_id: str, user_id: str) -> AsyncGener
     prompt = f"Context:\n{context}\n\nQuestion:\n{query}\n\nAnswer:"
 
     # Step 4: Call gemini-2.0-flash with stream=True
-    async for token in gemini_flash(prompt, api_key=gemini_api_key, stream=True):
+    async for token in gemini_flash_stream(prompt, api_key=gemini_api_key, stream=True):
         yield f'data: {{"token": "{token}"}}\n'
 
     # Step 5: After final token, yield done signal with citations
