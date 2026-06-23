@@ -1,144 +1,100 @@
-import logging
-from typing import List, Dict, Optional
-from fastapi import HTTPException, status
+from uuid import UUID
+from typing import List, Dict
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime
+from database.models import DocumentChunk
+from database.models import SourceCitation
 from sqlalchemy.orm import joinedload
-from database.models import DocumentChunk, UploadedFile
 
-logger = logging.getLogger(__name__)
 
 class SourceCitationService:
-    @staticmethod
-    async def create_citation(chunk_data: Dict, db: AsyncSession) -> DocumentChunk:
+    async def create_citation(self, citation_data: Dict, db: AsyncSession) -> SourceCitation:
         try:
-            new_chunk = DocumentChunk(**chunk_data)
-            db.add(new_chunk)
+            new_citation = SourceCitation(**citation_data)
+            db.add(new_citation)
             await db.commit()
-            await db.refresh(new_chunk)
-            return new_chunk
+            await db.refresh(new_citation)
+            return new_citation
         except SQLAlchemyError as e:
-            logger.error(f"Error creating citation: {e}")
             await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create citation."
-            )
+            raise HTTPException(status_code=500, detail=f"Error creating citation: {str(e)}")
 
-    @staticmethod
-    async def get_citation_by_id(chunk_id: str, db: AsyncSession) -> DocumentChunk:
+    async def get_citation_by_id(self, citation_id: UUID, db: AsyncSession) -> SourceCitation:
         try:
             result = await db.execute(
-                select(DocumentChunk).where(DocumentChunk.id == chunk_id)
+                select(SourceCitation).where(SourceCitation.id == citation_id)
             )
-            chunk = result.scalar_one_or_none()
-            if not chunk:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Citation with ID {chunk_id} not found."
-                )
-            return chunk
+            citation = result.scalar_one_or_none()
+            if not citation:
+                raise HTTPException(status_code=404, detail="Citation not found")
+            return citation
         except SQLAlchemyError as e:
-            logger.error(f"Error retrieving citation by ID: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to retrieve citation."
-            )
+            raise HTTPException(status_code=500, detail=f"Error retrieving citation: {str(e)}")
 
-    @staticmethod
-    async def list_all_citations(db: AsyncSession) -> List[DocumentChunk]:
+    async def list_all_citations(self, db: AsyncSession) -> List[SourceCitation]:
         try:
-            result = await db.execute(select(DocumentChunk))
-            chunks = result.scalars().all()
-            return chunks
+            result = await db.execute(select(SourceCitation))
+            citations = result.scalars().all()
+            return citations
         except SQLAlchemyError as e:
-            logger.error(f"Error listing all citations: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to list citations."
-            )
+            raise HTTPException(status_code=500, detail=f"Error listing citations: {str(e)}")
 
-    @staticmethod
-    async def update_citation(chunk_id: str, update_data: Dict, db: AsyncSession) -> DocumentChunk:
+    async def update_citation(self, citation_id: UUID, citation_update: Dict, db: AsyncSession) -> SourceCitation:
         try:
             result = await db.execute(
-                select(DocumentChunk).where(DocumentChunk.id == chunk_id)
+                select(SourceCitation).where(SourceCitation.id == citation_id)
             )
-            chunk = result.scalar_one_or_none()
-            if not chunk:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Citation with ID {chunk_id} not found."
-                )
-            for key, value in update_data.items():
-                setattr(chunk, key, value)
-            db.add(chunk)
-            await db.commit()
-            await db.refresh(chunk)
-            return chunk
-        except SQLAlchemyError as e:
-            logger.error(f"Error updating citation: {e}")
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update citation."
-            )
+            citation = result.scalar_one_or_none()
+            if not citation:
+                raise HTTPException(status_code=404, detail="Citation not found")
 
-    @staticmethod
-    async def delete_citation(chunk_id: str, db: AsyncSession) -> None:
+            for key, value in citation_update.items():
+                setattr(citation, key, value)
+
+            db.add(citation)
+            await db.commit()
+            await db.refresh(citation)
+            return citation
+        except SQLAlchemyError as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Error updating citation: {str(e)}")
+
+    async def delete_citation(self, citation_id: UUID, db: AsyncSession) -> None:
         try:
             result = await db.execute(
-                select(DocumentChunk).where(DocumentChunk.id == chunk_id)
+                select(SourceCitation).where(SourceCitation.id == citation_id)
             )
-            chunk = result.scalar_one_or_none()
-            if not chunk:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Citation with ID {chunk_id} not found."
-                )
-            await db.delete(chunk)
+            citation = result.scalar_one_or_none()
+            if not citation:
+                raise HTTPException(status_code=404, detail="Citation not found")
+
+            await db.delete(citation)
             await db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Error deleting citation: {e}")
             await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to delete citation."
-            )
+            raise HTTPException(status_code=500, detail=f"Error deleting citation: {str(e)}")
 
-    @staticmethod
-    async def generate_answer_with_citations(query: str, session_id: str, db: AsyncSession) -> Dict:
+    async def generate_answer_with_citations(self, query: str, db: AsyncSession) -> Dict:
         try:
             # Example logic for generating an answer with citations
-            # This assumes some external logic for querying embeddings and retrieving context
             result = await db.execute(
-                select(DocumentChunk, UploadedFile)
-                .join(UploadedFile, DocumentChunk.file_id == UploadedFile.id)
-                .where(DocumentChunk.session_id == session_id)
+                select(DocumentChunk).options(joinedload(DocumentChunk.source_citations))
             )
-            chunks = result.all()
-            if not chunks:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No citations found for the given session."
-                )
-            
+            chunks = result.scalars().all()
+
+            # Simulate answer generation and citation extraction
+            answer = f"Generated answer for query: {query}"
             citations = [
                 {
-                    "filename": chunk.UploadedFile.filename,
-                    "row_range": f"{chunk.DocumentChunk.row_start}-{chunk.DocumentChunk.row_end}",
+                    "filename": chunk.metadata.get("filename"),
+                    "row_range": f"{chunk.row_start}-{chunk.row_end}",
                 }
                 for chunk in chunks
             ]
-            answer = {
-                "query": query,
-                "citations": citations,
-            }
-            return answer
+
+            return {"answer": answer, "citations": citations}
         except SQLAlchemyError as e:
-            logger.error(f"Error generating answer with citations: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to generate answer with citations."
-            )
+            raise HTTPException(status_code=500, detail=f"Error generating answer with citations: {str(e)}")
