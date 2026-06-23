@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form, Query
+from fastapi import APIRouter, Depends, UploadFile, Form, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -23,31 +23,22 @@ class QueryResponse(BaseModel):
 @router.post("/ingest")
 async def ingest(file: UploadFile, session_id: Optional[str] = Form(None), current_user: dict = Depends(get_current_user)):
     """
-    Endpoint to ingest an uploaded Excel file into the system.
+    Endpoint to ingest an uploaded document.
     """
-    try:
-        await ingest_document(file, session_id, current_user['id'])
-        return {"message": "File ingested successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during ingestion: {str(e)}")
+    await ingest_document(file, session_id, current_user['id'])
+    return {"message": "Document ingested successfully"}
 
 @router.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest, current_user: dict = Depends(get_current_user)):
     """
     Endpoint to handle user queries and return answers with citations.
     """
-    try:
-        result = await answer_question(request.question, request.session_id or '', current_user['id'])
-        return {"answer": result['answer'], "citations": result['sources']}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during query processing: {str(e)}")
+    result = await answer_question(request.question, request.session_id or '', current_user['id'])
+    return {"answer": result['answer'], "citations": result['sources']}
 
 @router.get("/stream")
 async def stream(query: str = Query(...), session_id: Optional[str] = Query(None), current_user: dict = Depends(get_current_user)):
     """
-    Endpoint to stream answers for a user query.
+    Endpoint to stream answers for a given query.
     """
-    try:
-        return StreamingResponse(stream_answer(query, session_id or '', current_user['id']), media_type='text/event-stream')
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during streaming: {str(e)}")
+    return StreamingResponse(stream_answer(query, session_id or '', current_user['id']), media_type='text/event-stream')
