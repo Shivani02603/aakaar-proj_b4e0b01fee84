@@ -1,109 +1,152 @@
-import logging
-from typing import List, Optional
 from uuid import UUID
+from typing import List
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime
 from database.models import Layout
-from sqlalchemy.orm import joinedload
+from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+
+class LayoutBase(BaseModel):
+    name: str
+    description: str
+
+
+class LayoutCreate(LayoutBase):
+    pass
+
+
+class LayoutUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class LayoutResponse(LayoutBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
 
 class FrontendLayoutService:
     @staticmethod
-    async def create_layout(layout_data: dict, db: AsyncSession) -> Layout:
+    async def create_layout(layout_data: LayoutCreate, db: AsyncSession) -> LayoutResponse:
         try:
-            new_layout = Layout(**layout_data)
+            new_layout = Layout(
+                name=layout_data.name,
+                description=layout_data.description,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
             db.add(new_layout)
             await db.commit()
             await db.refresh(new_layout)
-            return new_layout
+            return LayoutResponse(
+                id=new_layout.id,
+                name=new_layout.name,
+                description=new_layout.description,
+                created_at=new_layout.created_at,
+                updated_at=new_layout.updated_at,
+            )
         except SQLAlchemyError as e:
-            logger.error(f"Error creating layout: {e}")
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error creating layout"
+                detail=f"Error creating layout: {str(e)}",
             )
 
     @staticmethod
-    async def get_layout_by_id(layout_id: UUID, db: AsyncSession) -> Layout:
+    async def get_layout_by_id(layout_id: UUID, db: AsyncSession) -> LayoutResponse:
         try:
-            result = await db.execute(
-                select(Layout).where(Layout.id == layout_id)
-            )
+            result = await db.execute(select(Layout).where(Layout.id == layout_id))
             layout = result.scalar_one_or_none()
             if not layout:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Layout with ID {layout_id} not found"
+                    detail=f"Layout with ID {layout_id} not found",
                 )
-            return layout
+            return LayoutResponse(
+                id=layout.id,
+                name=layout.name,
+                description=layout.description,
+                created_at=layout.created_at,
+                updated_at=layout.updated_at,
+            )
         except SQLAlchemyError as e:
-            logger.error(f"Error fetching layout by ID: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error fetching layout"
+                detail=f"Error retrieving layout: {str(e)}",
             )
 
     @staticmethod
-    async def list_all_layouts(db: AsyncSession) -> List[Layout]:
+    async def list_all_layouts(db: AsyncSession) -> List[LayoutResponse]:
         try:
             result = await db.execute(select(Layout))
             layouts = result.scalars().all()
-            return layouts
+            return [
+                LayoutResponse(
+                    id=layout.id,
+                    name=layout.name,
+                    description=layout.description,
+                    created_at=layout.created_at,
+                    updated_at=layout.updated_at,
+                )
+                for layout in layouts
+            ]
         except SQLAlchemyError as e:
-            logger.error(f"Error listing all layouts: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error listing layouts"
+                detail=f"Error listing layouts: {str(e)}",
             )
 
     @staticmethod
-    async def update_layout(layout_id: UUID, update_data: dict, db: AsyncSession) -> Layout:
+    async def update_layout(layout_id: UUID, layout_update: LayoutUpdate, db: AsyncSession) -> LayoutResponse:
         try:
-            result = await db.execute(
-                select(Layout).where(Layout.id == layout_id)
-            )
+            result = await db.execute(select(Layout).where(Layout.id == layout_id))
             layout = result.scalar_one_or_none()
             if not layout:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Layout with ID {layout_id} not found"
+                    detail=f"Layout with ID {layout_id} not found",
                 )
-            for key, value in update_data.items():
-                setattr(layout, key, value)
+            if layout_update.name is not None:
+                layout.name = layout_update.name
+            if layout_update.description is not None:
+                layout.description = layout_update.description
+            layout.updated_at = datetime.utcnow()
             db.add(layout)
             await db.commit()
             await db.refresh(layout)
-            return layout
+            return LayoutResponse(
+                id=layout.id,
+                name=layout.name,
+                description=layout.description,
+                created_at=layout.created_at,
+                updated_at=layout.updated_at,
+            )
         except SQLAlchemyError as e:
-            logger.error(f"Error updating layout: {e}")
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error updating layout"
+                detail=f"Error updating layout: {str(e)}",
             )
 
     @staticmethod
     async def delete_layout(layout_id: UUID, db: AsyncSession) -> None:
         try:
-            result = await db.execute(
-                select(Layout).where(Layout.id == layout_id)
-            )
+            result = await db.execute(select(Layout).where(Layout.id == layout_id))
             layout = result.scalar_one_or_none()
             if not layout:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Layout with ID {layout_id} not found"
+                    detail=f"Layout with ID {layout_id} not found",
                 )
             await db.delete(layout)
             await db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Error deleting layout: {e}")
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error deleting layout"
+                detail=f"Error deleting layout: {str(e)}",
             )
