@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
@@ -20,125 +20,93 @@ class UploadedFileBase(BaseModel):
     uploaded_at: datetime
     processing_status: str
 
-class UploadedFileCreate(UploadedFileBase):
-    pass
+class UploadedFileCreate(BaseModel):
+    session_id: UUID
+    filename: str
+    original_filename: str
+    file_size: int
 
 class UploadedFileResponse(UploadedFileBase):
     id: UUID
 
 class UploadedFileUpdate(BaseModel):
-    processing_status: Optional[str] = Field(None, description="Updated processing status of the file")
+    processing_status: Optional[str] = None
 
 # Routes
-@router.post("/", response_model=UploadedFileResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=UploadedFileResponse)
 async def upload_file(
     session_id: UUID = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    Upload an Excel file (.xlsx) and save its metadata to the database.
-    """
-    if not file.filename.endswith(".xlsx"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only .xlsx files are allowed for upload."
-        )
-
     try:
         # Save file to disk
-        file_path = save_file_to_disk(file, upload_dir="uploads")
-
-        # Create file metadata in the database
-        uploaded_file = create_uploaded_file(
-            file={
-                "session_id": session_id,
-                "filename": file_path,
-                "original_filename": file.filename,
-                "file_size": len(await file.read()),
-                "uploaded_at": datetime.utcnow(),
-                "processing_status": "Pending",
-            },
-            db=db,
+        file_path = save_file_to_disk(file, upload_dir="uploads/")
+        file_size = len(file.file.read())
+        
+        # Create UploadedFile record
+        uploaded_file = UploadedFileCreate(
+            session_id=session_id,
+            filename=file_path,
+            original_filename=file.filename,
+            file_size=file_size,
         )
-        return uploaded_file
+        created_file = create_uploaded_file(uploaded_file, db)
+        return UploadedFileResponse(**created_file.__dict__)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"File upload failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/", response_model=List[UploadedFileResponse])
-def list_files(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """
-    List all uploaded files.
-    """
+async def list_files(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     try:
-        return list_uploaded_files(db=db)
+        files = list_uploaded_files(db)
+        return [UploadedFileResponse(**file.__dict__) for file in files]
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve files: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{file_id}", response_model=UploadedFileResponse)
-def get_file(file_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """
-    Retrieve metadata of a specific uploaded file by ID.
-    """
+async def get_file(
+    file_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     try:
-        file = get_uploaded_file_by_id(file_id=file_id, db=db)
+        file = get_uploaded_file_by_id(file_id, db)
         if not file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found."
-            )
-        return file
+            raise HTTPException(status_code=404, detail="File not found")
+        return UploadedFileResponse(**file.__dict__)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{file_id}", response_model=UploadedFileResponse)
-def update_file(
+async def update_file(
     file_id: UUID,
     update_data: UploadedFileUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    Update metadata of an uploaded file.
-    """
     try:
-        updated_file = update_uploaded_file(file_id=file_id, update_data=update_data.dict(exclude_unset=True), db=db)
+        updated_file = update_uploaded_file(file_id, update_data.dict(exclude_unset=True), db)
         if not updated_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found."
-            )
-        return updated_file
+            raise HTTPException(status_code=404, detail="File not found")
+        return UploadedFileResponse(**updated_file.__dict__)
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_file(file_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """
-    Delete an uploaded file by ID.
-    """
+@router.delete("/{file_id}")
+async def delete_file(
+    file_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
     try:
-        success = delete_uploaded_file(file_id=file_id, db=db)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found."
-            )
+        deleted = delete_uploaded_file(file_id, db)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="File not found")
+        return {"detail": "File deleted successfully"}
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
