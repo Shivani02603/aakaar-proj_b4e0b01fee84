@@ -1,19 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getMessages, queryAI } from '@/lib/aiApi';
 import MessageBubble from '@/components/MessageBubble';
 import TypingIndicator from '@/components/TypingIndicator';
+
+interface ChatWindowProps {
+  sessionId: string | null;
+}
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   sources?: string[];
-}
-
-interface ChatWindowProps {
-  sessionId: string | null;
 }
 
 const ChatWindow = ({ sessionId }: ChatWindowProps) => {
@@ -29,10 +29,6 @@ const ChatWindow = ({ sessionId }: ChatWindowProps) => {
         setMessages([]);
         return;
       }
-
-      setLoading(true);
-      setError(null);
-
       try {
         const fetchedMessages = await getMessages(sessionId);
         setMessages(fetchedMessages.map((msg) => ({
@@ -43,8 +39,6 @@ const ChatWindow = ({ sessionId }: ChatWindowProps) => {
         })));
       } catch (err) {
         setError('Failed to load messages. Please try again.');
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -52,15 +46,12 @@ const ChatWindow = ({ sessionId }: ChatWindowProps) => {
   }, [sessionId]);
 
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!query.trim() || loading) return;
+    if (!query.trim() || !sessionId) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -71,7 +62,6 @@ const ChatWindow = ({ sessionId }: ChatWindowProps) => {
     setMessages((prev) => [...prev, userMessage]);
     setQuery('');
     setLoading(true);
-    setError(null);
 
     try {
       const response = await queryAI(query, sessionId);
@@ -91,7 +81,7 @@ const ChatWindow = ({ sessionId }: ChatWindowProps) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 bg-gray-100">
+      <div className="flex-1 overflow-y-auto p-4">
         {sessionId ? (
           messages.length > 0 ? (
             messages.map((message) => (
@@ -103,28 +93,32 @@ const ChatWindow = ({ sessionId }: ChatWindowProps) => {
               />
             ))
           ) : (
-            <p className="text-gray-500 text-center">No messages yet.</p>
+            <p className="text-gray-500 text-center">No messages yet. Start the conversation!</p>
           )
         ) : (
-          <p className="text-gray-500 text-center">No session selected.</p>
+          <p className="text-gray-500 text-center">Select a session to view messages.</p>
         )}
         <div ref={messagesEndRef} />
       </div>
       <form
         onSubmit={handleSubmit}
-        className="flex items-center p-4 border-t bg-white"
+        className="border-t border-gray-200 p-4 flex items-center gap-2"
       >
         <textarea
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Type your message..."
-          className="flex-1 resize-none border rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          rows={1}
+          className="flex-1 resize-none border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           disabled={loading}
+          onKeyDown={(e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+              handleSubmit(e);
+            }
+          }}
         />
         <button
           type="submit"
-          className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-300"
           disabled={loading}
         >
           Send
