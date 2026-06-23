@@ -1,117 +1,128 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
 from sqlalchemy.orm import Session
 from database.models import DocumentChunk
 from database.config import get_db
-from backend.services.auth import get_current_user
-from backend.services.ingestion_pipeline.storage_service import StorageService
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter(
-    prefix="/ingestion pipeline - storage",
+    prefix="/ingestion-pipeline-storage",
     tags=["Ingestion Pipeline - Storage"]
 )
 
-# Pydantic Schemas
+# Pydantic schemas
 class DocumentChunkBase(BaseModel):
     file_id: UUID
     content: str
     embedding: List[float]
-    metadata: dict
-    sheet_name: Optional[str]
-    row_start: Optional[int]
-    row_end: Optional[int]
-    chunk_index: Optional[int]
+    metadata: Optional[dict] = None
+    sheet_name: Optional[str] = None
+    row_start: Optional[int] = None
+    row_end: Optional[int] = None
+    chunk_index: Optional[int] = None
 
 class DocumentChunkCreate(DocumentChunkBase):
     pass
 
+class DocumentChunkUpdate(BaseModel):
+    content: Optional[str] = None
+    embedding: Optional[List[float]] = None
+    metadata: Optional[dict] = None
+    sheet_name: Optional[str] = None
+    row_start: Optional[int] = None
+    row_end: Optional[int] = None
+    chunk_index: Optional[int] = None
+
 class DocumentChunkResponse(DocumentChunkBase):
     id: UUID
-    created_at: datetime
+    created_at: str
 
-    class Config:
-        orm_mode = True
+# Dependency for JWT authentication
+def jwt_auth(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
+    # Placeholder for actual JWT validation logic
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    return credentials
 
-class DocumentChunkUpdate(BaseModel):
-    content: Optional[str]
-    embedding: Optional[List[float]]
-    metadata: Optional[dict]
-    sheet_name: Optional[str]
-    row_start: Optional[int]
-    row_end: Optional[int]
-    chunk_index: Optional[int]
-
-# Endpoints
+# Routes
 @router.post("/", response_model=DocumentChunkResponse, status_code=status.HTTP_201_CREATED)
 async def create_document_chunk(
     chunk: DocumentChunkCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(jwt_auth)
 ):
     try:
-        storage_service = StorageService(db)
-        new_chunk = storage_service.create_chunk(chunk.dict())
+        new_chunk = DocumentChunk(**chunk.dict())
+        db.add(new_chunk)
+        db.commit()
+        db.refresh(new_chunk)
         return new_chunk
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.get("/", response_model=List[DocumentChunkResponse], status_code=status.HTTP_200_OK)
+@router.get("/", response_model=List[DocumentChunkResponse])
 async def list_document_chunks(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(jwt_auth)
 ):
     try:
-        storage_service = StorageService(db)
-        chunks = storage_service.list_all_chunks()
+        chunks = db.query(DocumentChunk).all()
         return chunks
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.get("/{chunk_id}", response_model=DocumentChunkResponse, status_code=status.HTTP_200_OK)
+@router.get("/{chunk_id}", response_model=DocumentChunkResponse)
 async def get_document_chunk(
     chunk_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(jwt_auth)
 ):
     try:
-        storage_service = StorageService(db)
-        chunk = storage_service.get_chunk_by_id(chunk_id)
+        chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
         if not chunk:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document chunk not found")
         return chunk
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-@router.put("/{chunk_id}", response_model=DocumentChunkResponse, status_code=status.HTTP_200_OK)
+@router.put("/{chunk_id}", response_model=DocumentChunkResponse)
 async def update_document_chunk(
     chunk_id: UUID,
     chunk_update: DocumentChunkUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(jwt_auth)
 ):
     try:
-        storage_service = StorageService(db)
-        updated_chunk = storage_service.update_chunk(chunk_id, chunk_update.dict(exclude_unset=True))
-        if not updated_chunk:
+        chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
+        if not chunk:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document chunk not found")
-        return updated_chunk
+        
+        for key, value in chunk_update.dict(exclude_unset=True).items():
+            setattr(chunk, key, value)
+        
+        db.commit()
+        db.refresh(chunk)
+        return chunk
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.delete("/{chunk_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document_chunk(
     chunk_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    credentials: HTTPAuthorizationCredentials = Depends(jwt_auth)
 ):
     try:
-        storage_service = StorageService(db)
-        deleted = storage_service.delete_chunk(chunk_id)
-        if not deleted:
+        chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
+        if not chunk:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document chunk not found")
-        return {"detail": "Document chunk deleted successfully"}
+        
+        db.delete(chunk)
+        db.commit()
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
