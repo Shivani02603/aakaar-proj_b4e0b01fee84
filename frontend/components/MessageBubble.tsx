@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 
 interface MessageBubbleProps {
@@ -9,7 +11,7 @@ interface MessageBubbleProps {
 const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, sources }) => {
   const renderContent = (text: string) => {
     const markdownRegex = /(\*\*(.*?)\*\*)|(`(.*?)`)|(```([\s\S]*?)```)/g;
-    const parts = text.split(markdownRegex);
+    const parts = text.split(markdownRegex).filter(Boolean);
 
     return parts.map((part, index) => {
       if (part.startsWith('**') && part.endsWith('**')) {
@@ -21,19 +23,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, sources })
       }
       if (part.startsWith('`') && part.endsWith('`')) {
         return (
-          <code key={index} className="bg-gray-200 text-sm px-1 rounded">
+          <code key={index} className="bg-gray-200 text-gray-800 px-1 rounded">
             {part.slice(1, -1)}
           </code>
         );
       }
       if (part.startsWith('```') && part.endsWith('```')) {
         return (
-          <pre key={index} className="bg-gray-100 text-sm p-2 rounded">
-            {part.slice(3, -3)}
+          <pre key={index} className="bg-gray-100 text-gray-800 p-2 rounded overflow-x-auto">
+            <code>{part.slice(3, -3)}</code>
           </pre>
         );
       }
-      return part;
+      return <span key={index}>{part}</span>;
     });
   };
 
@@ -44,26 +46,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, sources })
   };
 
   return (
-    <div
-      className={`flex ${
-        role === 'user' ? 'justify-end' : 'justify-start'
-      } mb-4`}
-    >
+    <div className={`flex ${role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}>
       <div
-        className={`max-w-md p-3 rounded-lg ${
-          role === 'user'
-            ? 'bg-blue-500 text-white'
-            : 'bg-gray-200 text-black'
+        className={`max-w-lg p-3 rounded-lg ${
+          role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'
         }`}
       >
-        <div>{renderContent(content)}</div>
+        <div className="whitespace-pre-wrap">{renderContent(content)}</div>
         {role === 'assistant' && sources && sources.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {sources.map((source, index) => (
               <button
                 key={index}
                 onClick={() => handleSourceClick(source)}
-                className="text-xs bg-gray-300 px-2 py-1 rounded hover:bg-gray-400"
+                className="text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
               >
                 {source}
               </button>
