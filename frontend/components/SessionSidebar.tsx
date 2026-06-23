@@ -1,9 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createSession, getSessions } from '@/lib/aiApi';
-import { formatDistanceToNow } from 'date-fns';
-import { Session } from '@/types';
+import { getSessions, createSession } from '@/lib/aiApi';
+import { formatRelative } from 'date-fns';
+import { toast } from 'react-toastify';
+
+interface Session {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
 
 interface SessionSidebarProps {
   onSelectSession: (id: string) => void;
@@ -17,13 +25,13 @@ export default function SessionSidebar({ onSelectSession, activeSessionId }: Ses
 
   useEffect(() => {
     const fetchSessions = async () => {
-      setLoading(true);
-      setError(null);
       try {
+        setLoading(true);
         const fetchedSessions = await getSessions();
-        setSessions(fetchedSessions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        setSessions(fetchedSessions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
       } catch (err) {
         setError('Failed to load sessions. Please try again.');
+        toast.error('Failed to load sessions.');
       } finally {
         setLoading(false);
       }
@@ -35,47 +43,44 @@ export default function SessionSidebar({ onSelectSession, activeSessionId }: Ses
   const handleNewChat = async () => {
     try {
       const newSession = await createSession();
+      setSessions((prev) => [newSession, ...prev]);
       onSelectSession(newSession.id);
-    } catch {
-      setError('Failed to create a new session. Please try again.');
+    } catch (err) {
+      toast.error('Failed to create a new session.');
     }
   };
 
   return (
     <div className="w-64 bg-gray-100 border-r border-gray-300 h-full flex flex-col">
-      <div className="p-4 border-b border-gray-300">
-        <button
-          onClick={handleNewChat}
-          className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
-        >
-          New Chat
-        </button>
-      </div>
+      <button
+        onClick={handleNewChat}
+        className="p-4 text-white bg-blue-500 hover:bg-blue-600 transition-colors text-center font-medium"
+      >
+        New Chat
+      </button>
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-4 space-y-4">
+          <div className="p-4">
             {[...Array(3)].map((_, index) => (
-              <div key={index} className="h-10 bg-gray-200 rounded animate-pulse"></div>
+              <div key={index} className="h-10 bg-gray-200 rounded mb-2 animate-pulse"></div>
             ))}
           </div>
         ) : error ? (
           <div className="p-4 text-red-500">{error}</div>
         ) : (
-          <ul className="p-4 space-y-2">
+          <ul>
             {sessions.map((session) => (
               <li
                 key={session.id}
                 onClick={() => onSelectSession(session.id)}
-                className={`p-2 rounded cursor-pointer ${
+                className={`p-4 cursor-pointer ${
                   activeSessionId === session.id
-                    ? 'bg-blue-100 border-l-4 border-blue-500'
+                    ? 'bg-gray-300 border-l-4 border-blue-500'
                     : 'hover:bg-gray-200'
                 }`}
               >
-                <div className="text-sm font-medium truncate">{session.title}</div>
-                <div className="text-xs text-gray-500">
-                  {formatDistanceToNow(new Date(session.createdAt), { addSuffix: true })}
-                </div>
+                <div className="font-medium truncate">{session.name.slice(0, 30)}</div>
+                <div className="text-sm text-gray-500">{formatRelative(new Date(session.created_at), new Date())}</div>
               </li>
             ))}
           </ul>
