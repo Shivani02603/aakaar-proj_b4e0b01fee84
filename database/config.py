@@ -8,7 +8,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set.")
 
-# Configure SQLAlchemy engine with connection pooling
+# SQLAlchemy engine configuration
 engine = create_engine(
     DATABASE_URL,
     pool_size=5,
@@ -33,7 +33,7 @@ def get_db():
 
 # Function to initialize the database (create all tables)
 def init_db():
-    from database.models import Base  # Import models here to ensure they are registered
+    from database.models import Base  # Ensure all models are imported
     Base.metadata.create_all(bind=engine)
 
 # Health check function to test the database connection
